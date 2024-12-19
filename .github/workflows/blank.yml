@@ -1,0 +1,53 @@
+name: Compile
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "10 10 1-31/2 * *"
+  push:
+    branches:
+      - main
+env:
+    GH_TOKEN: ${{ github.token }}
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest 
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+        with:
+         token: '${{ github.token }}'
+      - name: Delete workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 0
+          keep_minimum_runs: 0
+      - name: release
+        run: |
+            rm -fr * .git .github
+            sudo apt update
+            sudo apt install git -y
+            sudo snap install go --classic
+            gh repo clone sagernet/sing-box -- --branch dev-next
+            cd sing-box/cmd/sing-box
+            #CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -trimpath -ldflags "-s -w -buildid= -extldflags=-static" -tags with_clash_api,with_gvisor,with_quic -o ${{ github.workspace }}/sing
+            CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -trimpath -ldflags "-s -w -buildid= -extldflags=-static" -tags with_gvisor,with_quic -o ${{ github.workspace }}/sing
+            cd ${{ github.workspace }}
+            wget https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-amd64_linux.tar.xz
+            tar xf upx-4.2.4-amd64_linux.tar.xz
+            mv upx-4.2.4-amd64_linux/upx .
+            chmod +x ./upx 
+            #./upx --best --ultra-brute sing
+            rm -rf sing-box upx*
+            mkdir -p .github/workflows
+            wget -qO .github/workflows/blank.yml https://github.com/${{ github.repository }}/raw/main/.github/workflows/blank.yml &> /dev/null
+            git config --global init.defaultBranch main
+            git init
+            git add .
+            git config user.name "mainians"
+            git config user.email "61817665+mainians@users.noreply.github.com"
+            git commit -m "sing binary"
+            git remote add origin "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
+            git push origin main --force
