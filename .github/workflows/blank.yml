@@ -1,0 +1,54 @@
+name: Compile
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "4 22 * * 0"
+  push:
+    branches:
+      - main
+env:
+    GH_TOKEN: ${{ github.token }}
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest 
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+        with:
+         token: '${{ github.token }}'
+      - name: Delete workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 0
+          keep_minimum_runs: 0
+      - name: Go
+        uses: actions/setup-go@v5
+      - name: release
+        run: |
+            rm -fr * .git .github
+            gh repo clone sagernet/sing-box -- --branch dev-next
+            cd sing-box/cmd/sing-box
+            #CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -trimpath -ldflags "-s -w -buildid= -extldflags=-static" -tags with_clash_api,with_gvisor,with_quic -o ${{ github.workspace }}/sing
+            #CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -trimpath -ldflags "-s -w -buildid= -extldflags=-static" -tags with_gvisor,with_quic -o ${{ github.workspace }}/sing
+            CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath \
+            -ldflags "-s -w -buildid= -extldflags=-static -X 'github.com/sagernet/sing-box/constant.Version=$(date '+%Y.%-m.%-d')'" \
+            -tags with_gvisor,with_quic,with_dhcp,with_wireguard,with_utls,with_acme,with_clash_api -o ${{ github.workspace }}/sing-box.exe
+            cd ${{ github.workspace }}
+            #wget -qO- https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-amd64_linux.tar.xz | tar Jxf - --strip-components=1 --no-anchored upx
+            #./upx sing
+            zip sing.zip sing-box.exe
+            rm -rf sing-box sing-box.exe #upx
+            mkdir -p .github/workflows
+            wget -qO .github/workflows/blank.yml https://github.com/${{ github.repository }}/raw/main/.github/workflows/blank.yml &> /dev/null
+            git config --global init.defaultBranch main
+            git init
+            git add .
+            git config user.name "ycycxz"
+            git config user.email "61817665+ycycxz@users.noreply.github.com"
+            git commit -m "$(date '+%Y.%-m.%-d')"
+            git remote add origin "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
+            git push origin main --force
+            curl -i "https://purge.jsdelivr.net/gh/${{ github.repository }}@main/${{ github.event.repository.name }}.zip"
